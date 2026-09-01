@@ -93,6 +93,7 @@ button { color: inherit; }
   user-select: none;
   transition: box-shadow .14s ease, border-color .14s ease;
 }
+.mind-node.has-children { padding-right: 68px; }
 .mind-node:hover { box-shadow: 0 10px 24px rgba(40,36,65,.14); }
 .mind-node.selected { border-color: var(--violet); box-shadow: 0 0 0 3px rgba(108,92,231,.15), 0 10px 25px rgba(40,36,65,.13); }
 .mind-node.dragging { z-index: 3; cursor: grabbing; opacity: .9; }
@@ -124,8 +125,10 @@ button { color: inherit; }
 .node-dot { flex: 0 0 10px; width: 10px; height: 10px; border-radius: 50%; background: var(--node-color); box-shadow: 0 0 0 5px var(--node-soft); }
 .root-node .node-dot { background: #c6ffea; box-shadow: 0 0 0 5px rgba(198,255,234,.16); }
 .node-add { position: absolute; right: 10px; top: 50%; translate: 0 -50%; display: grid; place-items: center; width: 25px; height: 25px; border-radius: 8px; color: var(--node-color); background: var(--node-soft); opacity: 0; transition: opacity .14s ease; }
-.mind-node:hover .node-add, .mind-node.selected .node-add { opacity: 1; }
+.node-collapse { position: absolute; right: 39px; top: 50%; translate: 0 -50%; display: grid; place-items: center; min-width: 24px; height: 25px; padding: 0 5px; border-radius: 8px; color: var(--node-color); background: var(--node-soft); opacity: 0; cursor: pointer; font-size: 11px; font-weight: 800; transition: opacity .14s ease; }
+.mind-node:hover .node-add, .mind-node.selected .node-add, .mind-node:hover .node-collapse, .mind-node.selected .node-collapse, .node-collapse:not([hidden]) { opacity: 1; }
 .root-node .node-add { color: white; background: rgba(255,255,255,.16); }
+.root-node .node-collapse { color: white; background: rgba(255,255,255,.16); }
 .color-violet { --node-color: var(--violet); --node-soft: var(--violet-soft); }
 .color-blue { --node-color: var(--blue); --node-soft: var(--blue-soft); }
 .color-mint { --node-color: var(--mint); --node-soft: var(--mint-soft); }
