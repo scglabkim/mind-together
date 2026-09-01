@@ -33,7 +33,7 @@ export function nodeHeight(node) {
   return clamp(Number(node?.height) || NODE_HEIGHT, NODE_HEIGHT, NODE_MAX_HEIGHT);
 }
 
-export function createNode({ id = createId(), text = "새 아이디어", x = 2000, y = 1500, parentId = null, color = "violet", width, height, now = Date.now() } = {}) {
+export function createNode({ id = createId(), text = "새 아이디어", x = 2000, y = 1500, parentId = null, color = "violet", width, height, collapsed = false, now = Date.now() } = {}) {
   const normalizedText = cleanText(text);
   const estimatedSize = estimatedNodeSize(normalizedText);
   return {
@@ -44,6 +44,7 @@ export function createNode({ id = createId(), text = "새 아이디어", x = 200
     width: clamp(Number(width) || estimatedSize.width, NODE_WIDTH, NODE_MAX_WIDTH),
     height: clamp(Number(height) || estimatedSize.height, NODE_HEIGHT, NODE_MAX_HEIGHT),
     parentId: parentId || null,
+    collapsed: Boolean(collapsed),
     color: COLORS.includes(color) ? color : "violet",
     createdAt: now,
     updatedAt: now
@@ -72,6 +73,22 @@ export function childPosition(nodes, parent) {
   };
 }
 
+export function rootPosition(nodes) {
+  const roots = Object.values(nodes).filter((node) => node.parentId === null);
+  const origin = nodes.root ?? roots[0] ?? { x: 1905, y: 1467 };
+  const slots = [
+    [560, 0], [-560, 0], [0, 420], [0, -420],
+    [560, 420], [-560, 420], [560, -420], [-560, -420]
+  ];
+  const index = Math.max(0, roots.length - 1);
+  const ring = Math.floor(index / slots.length) + 1;
+  const [offsetX, offsetY] = slots[index % slots.length];
+  return {
+    x: clamp(origin.x + offsetX * ring, 40, BOARD_WIDTH - NODE_WIDTH - 40),
+    y: clamp(origin.y + offsetY * ring, 40, BOARD_HEIGHT - NODE_HEIGHT - 40)
+  };
+}
+
 export function descendants(nodes, nodeId) {
   const result = new Set([nodeId]);
   let changed = true;
@@ -87,8 +104,43 @@ export function descendants(nodes, nodeId) {
   return result;
 }
 
+export function visibleNodeIds(nodes) {
+  const visible = new Set();
+  for (const node of Object.values(nodes)) {
+    if (!node.parentId || !nodes[node.parentId]) visible.add(node.id);
+  }
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const node of Object.values(nodes)) {
+      const parent = node.parentId && nodes[node.parentId];
+      if (parent && visible.has(parent.id) && !parent.collapsed && !visible.has(node.id)) {
+        visible.add(node.id);
+        changed = true;
+      }
+    }
+  }
+  return visible;
+}
+
+export function translateBranch(nodes, nodeId, requestedDx, requestedDy) {
+  const ids = [...descendants(nodes, nodeId)].filter((id) => nodes[id]);
+  if (!ids.length) return { ids, dx: 0, dy: 0 };
+  const minX = Math.min(...ids.map((id) => nodes[id].x));
+  const minY = Math.min(...ids.map((id) => nodes[id].y));
+  const maxX = Math.max(...ids.map((id) => nodes[id].x + nodeWidth(nodes[id])));
+  const maxY = Math.max(...ids.map((id) => nodes[id].y + nodeHeight(nodes[id])));
+  const dx = clamp(Number(requestedDx) || 0, -minX, BOARD_WIDTH - maxX);
+  const dy = clamp(Number(requestedDy) || 0, -minY, BOARD_HEIGHT - maxY);
+  ids.forEach((id) => {
+    nodes[id].x += dx;
+    nodes[id].y += dy;
+  });
+  return { ids, dx, dy };
+}
+
 export function canReparent(nodes, nodeId, targetId) {
-  if (nodeId === "root" || nodeId === targetId || !nodes[nodeId] || !nodes[targetId]) return false;
+  if (nodeId === targetId || !nodes[nodeId] || !nodes[targetId] || nodes[nodeId].parentId === null) return false;
   return !descendants(nodes, nodeId).has(targetId);
 }
 
@@ -123,6 +175,7 @@ export function normalizeBoard(raw, roomId) {
       y: Number(value.y) || 0,
       width: value.width,
       height: value.height,
+      collapsed: value.collapsed,
       parentId: value.parentId,
       color: value.color,
       now: Number(value.updatedAt) || Date.now()
