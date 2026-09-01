@@ -2,6 +2,8 @@ export const BOARD_WIDTH = 4000;
 export const BOARD_HEIGHT = 3000;
 export const NODE_WIDTH = 190;
 export const NODE_HEIGHT = 66;
+export const NODE_MAX_WIDTH = 340;
+export const NODE_MAX_HEIGHT = 240;
 export const COLORS = ["violet", "blue", "mint", "peach", "slate"];
 
 export function createId(prefix = "node") {
@@ -14,12 +16,33 @@ export function cleanText(value, fallback = "새 아이디어", maxLength = 120)
   return (normalized || fallback).slice(0, maxLength);
 }
 
-export function createNode({ id = createId(), text = "새 아이디어", x = 2000, y = 1500, parentId = null, color = "violet", now = Date.now() } = {}) {
+export function estimatedNodeSize(text) {
+  const value = cleanText(text);
+  const units = [...value].reduce((total, character) => total + (/[^\u0000-\u00ff]/.test(character) ? 1.75 : 1), 0);
+  const width = clamp(Math.round(NODE_WIDTH + Math.max(0, units - 14) * 4.5), NODE_WIDTH, NODE_MAX_WIDTH);
+  const usableUnitsPerLine = Math.max(12, (width - 66) / 8);
+  const lines = Math.max(1, Math.ceil(units / usableUnitsPerLine));
+  return { width, height: clamp(42 + lines * 20, NODE_HEIGHT, NODE_MAX_HEIGHT) };
+}
+
+export function nodeWidth(node) {
+  return clamp(Number(node?.width) || NODE_WIDTH, NODE_WIDTH, NODE_MAX_WIDTH);
+}
+
+export function nodeHeight(node) {
+  return clamp(Number(node?.height) || NODE_HEIGHT, NODE_HEIGHT, NODE_MAX_HEIGHT);
+}
+
+export function createNode({ id = createId(), text = "새 아이디어", x = 2000, y = 1500, parentId = null, color = "violet", width, height, now = Date.now() } = {}) {
+  const normalizedText = cleanText(text);
+  const estimatedSize = estimatedNodeSize(normalizedText);
   return {
     id,
-    text: cleanText(text),
+    text: normalizedText,
     x: Math.round(Number(x) || 0),
     y: Math.round(Number(y) || 0),
+    width: clamp(Number(width) || estimatedSize.width, NODE_WIDTH, NODE_MAX_WIDTH),
+    height: clamp(Number(height) || estimatedSize.height, NODE_HEIGHT, NODE_MAX_HEIGHT),
     parentId: parentId || null,
     color: COLORS.includes(color) ? color : "violet",
     createdAt: now,
@@ -74,9 +97,11 @@ export function dropTargetAt(nodes, nodeId, x, y) {
   let closestDistance = Infinity;
   for (const target of Object.values(nodes)) {
     if (!canReparent(nodes, nodeId, target.id)) continue;
-    const inside = x >= target.x && x <= target.x + NODE_WIDTH && y >= target.y && y <= target.y + NODE_HEIGHT;
+    const width = nodeWidth(target);
+    const height = nodeHeight(target);
+    const inside = x >= target.x && x <= target.x + width && y >= target.y && y <= target.y + height;
     if (!inside) continue;
-    const distance = Math.hypot(x - (target.x + NODE_WIDTH / 2), y - (target.y + NODE_HEIGHT / 2));
+    const distance = Math.hypot(x - (target.x + width / 2), y - (target.y + height / 2));
     if (distance < closestDistance) {
       closest = target.id;
       closestDistance = distance;
@@ -94,12 +119,16 @@ export function normalizeBoard(raw, roomId) {
     nodes[key] = createNode({
       id: key,
       text: value.text,
-      x: clamp(Number(value.x) || 0, 0, BOARD_WIDTH - NODE_WIDTH),
-      y: clamp(Number(value.y) || 0, 0, BOARD_HEIGHT - NODE_HEIGHT),
+      x: Number(value.x) || 0,
+      y: Number(value.y) || 0,
+      width: value.width,
+      height: value.height,
       parentId: value.parentId,
       color: value.color,
       now: Number(value.updatedAt) || Date.now()
     });
+    nodes[key].x = clamp(nodes[key].x, 0, BOARD_WIDTH - nodeWidth(nodes[key]));
+    nodes[key].y = clamp(nodes[key].y, 0, BOARD_HEIGHT - nodeHeight(nodes[key]));
     nodes[key].createdAt = Number(value.createdAt) || nodes[key].updatedAt;
   }
   if (!nodes.root) nodes.root = fallback.nodes.root;
@@ -112,18 +141,43 @@ export function normalizeBoard(raw, roomId) {
   };
 }
 
+function edgeAnchor(node, toward) {
+  const width = nodeWidth(node);
+  const height = nodeHeight(node);
+  const centerX = node.x + width / 2;
+  const centerY = node.y + height / 2;
+  const targetX = toward.x + nodeWidth(toward) / 2;
+  const targetY = toward.y + nodeHeight(toward) / 2;
+  const dx = targetX - centerX;
+  const dy = targetY - centerY;
+  const horizontalRatio = Math.abs(dx) / Math.max(width / 2, 1);
+  const verticalRatio = Math.abs(dy) / Math.max(height / 2, 1);
+  const scale = 1 / Math.max(horizontalRatio, verticalRatio, 0.0001);
+  const horizontalSide = horizontalRatio >= verticalRatio;
+  return {
+    x: centerX + dx * scale,
+    y: centerY + dy * scale,
+    nx: horizontalSide ? Math.sign(dx) || 1 : 0,
+    ny: horizontalSide ? 0 : Math.sign(dy) || 1
+  };
+}
+
+export function edgeAnchors(parent, child) {
+  return {
+    start: edgeAnchor(parent, child),
+    end: edgeAnchor(child, parent)
+  };
+}
+
 export function edgePath(parent, child) {
-  const parentCenterX = parent.x + NODE_WIDTH / 2;
-  const parentCenterY = parent.y + NODE_HEIGHT / 2;
-  const childCenterX = child.x + NODE_WIDTH / 2;
-  const childCenterY = child.y + NODE_HEIGHT / 2;
-  const movingRight = childCenterX >= parentCenterX;
-  const startX = parent.x + (movingRight ? NODE_WIDTH : 0);
-  const endX = child.x + (movingRight ? 0 : NODE_WIDTH);
-  const controlOffset = Math.max(60, Math.abs(endX - startX) * 0.45);
-  const c1x = startX + (movingRight ? controlOffset : -controlOffset);
-  const c2x = endX + (movingRight ? -controlOffset : controlOffset);
-  return `M ${startX} ${parentCenterY} C ${c1x} ${parentCenterY}, ${c2x} ${childCenterY}, ${endX} ${childCenterY}`;
+  const { start, end } = edgeAnchors(parent, child);
+  const distance = Math.hypot(end.x - start.x, end.y - start.y);
+  const controlOffset = clamp(distance * 0.38, 48, 220);
+  const c1x = start.x + start.nx * controlOffset;
+  const c1y = start.y + start.ny * controlOffset;
+  const c2x = end.x + end.nx * controlOffset;
+  const c2y = end.y + end.ny * controlOffset;
+  return `M ${start.x} ${start.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${end.x} ${end.y}`;
 }
 
 export function clamp(value, min, max) {
