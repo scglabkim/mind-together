@@ -17,7 +17,7 @@ import {
   nodeWidth,
   nodeHeight,
   clamp
-} from "./model.js";
+} from "./model.js?v=20260901-4";
 
 const FIREBASE_VERSION = "12.18.0";
 const roomMatch = location.hash.match(/^#\/room\/([a-zA-Z0-9_-]{20,80})$/);
