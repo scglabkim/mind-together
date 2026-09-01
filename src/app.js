@@ -198,6 +198,14 @@ function applyTransform() {
   elements.viewport.style.transform = `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`;
 }
 
+function updateNodeSelection() {
+  elements.nodes.querySelectorAll(".mind-node").forEach((nodeElement) => {
+    const selected = nodeElement.dataset.nodeId === selectedId;
+    nodeElement.classList.toggle("selected", selected);
+    nodeElement.setAttribute("aria-pressed", String(selected));
+  });
+}
+
 function addChildNode() {
   if (!board) return;
   const parent = board.nodes[selectedId] ?? board.nodes.root;
@@ -280,7 +288,9 @@ function onCanvasPointerDown(event) {
       nodeY: node.y,
       moved: false
     };
-    render();
+    // 클릭할 때 노드 DOM을 교체하면 브라우저의 더블클릭 판정이 끊긴다.
+    // 선택 스타일만 갱신해 중심 노드를 포함한 모든 노드의 dblclick을 유지한다.
+    updateNodeSelection();
   } else {
     interaction = {
       type: "pan",
