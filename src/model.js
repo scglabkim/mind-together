@@ -64,6 +64,27 @@ export function descendants(nodes, nodeId) {
   return result;
 }
 
+export function canReparent(nodes, nodeId, targetId) {
+  if (nodeId === "root" || nodeId === targetId || !nodes[nodeId] || !nodes[targetId]) return false;
+  return !descendants(nodes, nodeId).has(targetId);
+}
+
+export function dropTargetAt(nodes, nodeId, x, y) {
+  let closest = null;
+  let closestDistance = Infinity;
+  for (const target of Object.values(nodes)) {
+    if (!canReparent(nodes, nodeId, target.id)) continue;
+    const inside = x >= target.x && x <= target.x + NODE_WIDTH && y >= target.y && y <= target.y + NODE_HEIGHT;
+    if (!inside) continue;
+    const distance = Math.hypot(x - (target.x + NODE_WIDTH / 2), y - (target.y + NODE_HEIGHT / 2));
+    if (distance < closestDistance) {
+      closest = target.id;
+      closestDistance = distance;
+    }
+  }
+  return closest;
+}
+
 export function normalizeBoard(raw, roomId) {
   const fallback = createBoard(roomId);
   if (!raw || typeof raw !== "object") return fallback;
