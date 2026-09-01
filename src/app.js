@@ -1,6 +1,4 @@
 import {
-  BOARD_WIDTH,
-  BOARD_HEIGHT,
   NODE_WIDTH,
   NODE_HEIGHT,
   NODE_MAX_WIDTH,
@@ -9,15 +7,18 @@ import {
   createNode,
   createBoard,
   childPosition,
+  rootPosition,
   cleanText,
   descendants,
+  visibleNodeIds,
+  translateBranch,
   dropTargetAt,
   edgePath,
   normalizeBoard,
   nodeWidth,
   nodeHeight,
   clamp
-} from "./model.js?v=20260901-4";
+} from "./model.js?v=20260901-5";
 
 const FIREBASE_VERSION = "12.18.0";
 const roomMatch = location.hash.match(/^#\/room\/([a-zA-Z0-9_-]{20,80})$/);
@@ -33,6 +34,7 @@ const elements = {
   nodes: document.querySelector("#nodes"),
   edges: document.querySelector("#edges"),
   addNode: document.querySelector("#add-node"),
+  addRoot: document.querySelector("#add-root"),
   editNode: document.querySelector("#edit-node"),
   deleteNode: document.querySelector("#delete-node"),
   zoomIn: document.querySelector("#zoom-in"),
@@ -74,6 +76,7 @@ elements.createBoard.addEventListener("click", () => {
 });
 
 elements.addNode.addEventListener("click", addChildNode);
+elements.addRoot.addEventListener("click", addRootNode);
 elements.editNode.addEventListener("click", () => startInlineEdit());
 elements.deleteNode.addEventListener("click", deleteSelected);
 elements.zoomIn.addEventListener("click", () => zoomBy(1.16));
@@ -137,12 +140,14 @@ function touchBoard() {
 
 function render() {
   if (!board) return;
+  const visibleIds = visibleNodeIds(board.nodes);
+  if (!visibleIds.has(selectedId)) selectedId = "root";
   elements.boardTitle.value = board.title;
   elements.nodes.replaceChildren();
   elements.edges.replaceChildren();
 
   for (const node of Object.values(board.nodes)) {
-    if (node.parentId && board.nodes[node.parentId]) {
+    if (visibleIds.has(node.id) && node.parentId && visibleIds.has(node.parentId) && board.nodes[node.parentId]) {
       const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
       path.setAttribute("d", edgePath(board.nodes[node.parentId], node));
       path.setAttribute("class", `edge edge-${node.color}`);
@@ -152,16 +157,19 @@ function render() {
   }
 
   for (const node of Object.values(board.nodes)) {
+    if (!visibleIds.has(node.id)) continue;
+    const childCount = Object.values(board.nodes).filter((candidate) => candidate.parentId === node.id).length;
+    const hiddenCount = descendants(board.nodes, node.id).size - 1;
     const nodeElement = document.createElement("div");
     nodeElement.tabIndex = 0;
     nodeElement.setAttribute("role", "button");
-    nodeElement.className = `mind-node color-${node.color}${selectedId === node.id ? " selected" : ""}${node.id === "root" ? " root-node" : ""}${editingId === node.id ? " editing" : ""}`;
+    nodeElement.className = `mind-node color-${node.color}${selectedId === node.id ? " selected" : ""}${node.parentId === null ? " root-node" : ""}${editingId === node.id ? " editing" : ""}${childCount ? " has-children" : ""}`;
     nodeElement.dataset.nodeId = node.id;
     nodeElement.setAttribute("aria-pressed", String(selectedId === node.id));
     nodeElement.style.transform = `translate(${node.x}px, ${node.y}px)`;
     nodeElement.style.width = `${nodeWidth(node)}px`;
     nodeElement.style.height = `${nodeHeight(node)}px`;
-    nodeElement.innerHTML = `<span class="node-dot"></span><span class="node-copy"></span><span class="node-add" aria-hidden="true">＋</span>`;
+    nodeElement.innerHTML = `<span class="node-dot"></span><span class="node-copy"></span><span class="node-collapse" role="button"></span><span class="node-add" aria-hidden="true">＋</span>`;
     const copyElement = nodeElement.querySelector(".node-copy");
     if (editingId === node.id) {
       const input = document.createElement("textarea");
@@ -191,6 +199,20 @@ function render() {
       copyElement.textContent = node.text;
     }
     nodeElement.setAttribute("aria-label", `${node.text} 아이디어`);
+    const collapseElement = nodeElement.querySelector(".node-collapse");
+    if (childCount) {
+      collapseElement.textContent = node.collapsed ? `+${hiddenCount}` : "−";
+      collapseElement.setAttribute("aria-label", node.collapsed ? `${hiddenCount}개 하위 아이디어 펼치기` : "하위 아이디어 접기");
+      collapseElement.title = node.collapsed ? "하위 아이디어 펼치기" : "하위 아이디어 접기";
+      collapseElement.addEventListener("pointerdown", (event) => event.stopPropagation());
+      collapseElement.addEventListener("click", (event) => {
+        event.stopPropagation();
+        selectedId = node.id;
+        toggleNodeCollapse(node.id);
+      });
+    } else {
+      collapseElement.hidden = true;
+    }
     nodeElement.querySelector(".node-add").addEventListener("pointerdown", (event) => event.stopPropagation());
     nodeElement.querySelector(".node-add").addEventListener("click", (event) => {
       event.stopPropagation();
@@ -200,6 +222,16 @@ function render() {
     elements.nodes.append(nodeElement);
   }
   applyTransform();
+}
+
+function toggleNodeCollapse(nodeId) {
+  const node = board?.nodes[nodeId];
+  if (!node) return;
+  node.collapsed = !node.collapsed;
+  node.updatedAt = Date.now();
+  touchBoard();
+  render();
+  saveNode(node);
 }
 
 function applyTransform() {
@@ -257,6 +289,8 @@ function updateDropTarget(targetId = null) {
 function addChildNode() {
   if (!board) return;
   const parent = board.nodes[selectedId] ?? board.nodes.root;
+  const wasCollapsed = parent.collapsed;
+  parent.collapsed = false;
   const position = childPosition(board.nodes, parent);
   const childCount = Object.values(board.nodes).filter((node) => node.parentId === parent.id).length;
   const palette = ["blue", "mint", "peach", "slate", "violet"];
@@ -266,6 +300,29 @@ function addChildNode() {
     y: position.y,
     parentId: parent.id,
     color: palette[childCount % palette.length]
+  });
+  board.nodes[node.id] = node;
+  selectedId = node.id;
+  touchBoard();
+  render();
+  if (wasCollapsed) {
+    parent.updatedAt = Date.now();
+    saveNodes([parent, node]);
+  } else {
+    saveNode(node);
+  }
+  startInlineEdit(true);
+}
+
+function addRootNode() {
+  if (!board) return;
+  const position = rootPosition(board.nodes);
+  const node = createNode({
+    text: "중심 아이디어",
+    x: position.x,
+    y: position.y,
+    parentId: null,
+    color: "violet"
   });
   board.nodes[node.id] = node;
   selectedId = node.id;
@@ -340,6 +397,8 @@ function onCanvasPointerDown(event) {
       startY: event.clientY,
       nodeX: node.x,
       nodeY: node.y,
+      branchIds: [...descendants(board.nodes, id)],
+      branchPositions: Object.fromEntries([...descendants(board.nodes, id)].map((branchId) => [branchId, { x: board.nodes[branchId].x, y: board.nodes[branchId].y }])),
       moved: false,
       dropTargetId: null
     };
@@ -362,7 +421,7 @@ function onCanvasPointerDown(event) {
 }
 
 function onCanvasDoubleClick(event) {
-  if (event.target.closest(".node-add, .node-inline-editor")) return;
+  if (event.target.closest(".node-add, .node-collapse, .node-inline-editor")) return;
   const nodeElement = event.target.closest(".mind-node");
   if (!nodeElement) return;
   event.preventDefault();
@@ -387,12 +446,16 @@ function onPointerMove(event) {
     if (Math.hypot(dx, dy) <= 5) return;
     interaction.moved = true;
   }
-  node.x = clamp(interaction.nodeX + dx / transform.scale, 0, BOARD_WIDTH - nodeWidth(node));
-  node.y = clamp(interaction.nodeY + dy / transform.scale, 0, BOARD_HEIGHT - nodeHeight(node));
+  interaction.branchIds.forEach((id) => {
+    board.nodes[id].x = interaction.branchPositions[id].x;
+    board.nodes[id].y = interaction.branchPositions[id].y;
+  });
+  translateBranch(board.nodes, selectedId, dx / transform.scale, dy / transform.scale);
   const rect = elements.canvas.getBoundingClientRect();
   const worldX = (event.clientX - rect.left - transform.x) / transform.scale;
   const worldY = (event.clientY - rect.top - transform.y) / transform.scale;
-  interaction.dropTargetId = dropTargetAt(board.nodes, selectedId, worldX, worldY);
+  const visibleNodes = Object.fromEntries([...visibleNodeIds(board.nodes)].map((id) => [id, board.nodes[id]]));
+  interaction.dropTargetId = dropTargetAt(visibleNodes, selectedId, worldX, worldY);
   updateBoardGeometry();
   updateDropTarget(interaction.dropTargetId);
 }
@@ -402,25 +465,29 @@ function onPointerUp(event) {
   if (interaction.type === "node" && interaction.moved) {
     const node = board.nodes[selectedId];
     if (event.type === "pointercancel") {
-      node.x = interaction.nodeX;
-      node.y = interaction.nodeY;
+      interaction.branchIds.forEach((id) => {
+        board.nodes[id].x = interaction.branchPositions[id].x;
+        board.nodes[id].y = interaction.branchPositions[id].y;
+      });
     } else {
       const target = board.nodes[interaction.dropTargetId];
       if (target) {
         const otherNodes = { ...board.nodes };
         delete otherNodes[node.id];
         const position = childPosition(otherNodes, target);
+        translateBranch(board.nodes, selectedId, position.x - node.x, position.y - node.y);
         node.parentId = target.id;
-        node.x = position.x;
-        node.y = position.y;
         showToast(`‘${target.text}’의 하위 아이디어로 이동했어요.`);
-      } else {
-        node.x = Math.round(node.x);
-        node.y = Math.round(node.y);
       }
-      node.updatedAt = Date.now();
+      const updatedAt = Date.now();
+      const movedNodes = interaction.branchIds.map((id) => board.nodes[id]);
+      movedNodes.forEach((movedNode) => {
+        movedNode.x = Math.round(movedNode.x);
+        movedNode.y = Math.round(movedNode.y);
+        movedNode.updatedAt = updatedAt;
+      });
       touchBoard();
-      saveNode(node);
+      saveNodes(movedNodes);
     }
     render();
   }
@@ -457,7 +524,8 @@ function zoomBy(amount) {
 
 function fitView(initial) {
   if (!board) return;
-  const values = Object.values(board.nodes);
+  const visibleIds = visibleNodeIds(board.nodes);
+  const values = Object.values(board.nodes).filter((node) => visibleIds.has(node.id));
   const minX = Math.min(...values.map((node) => node.x));
   const minY = Math.min(...values.map((node) => node.y));
   const maxX = Math.max(...values.map((node) => node.x + nodeWidth(node)));
@@ -565,6 +633,11 @@ async function connectFirebase() {
         updatedAt: databaseModule.serverTimestamp()
       });
     },
+    async saveNodes(nodes) {
+      const updates = { updatedAt: databaseModule.serverTimestamp() };
+      nodes.forEach((node) => { updates[`nodes/${node.id}`] = node; });
+      await databaseModule.update(databaseModule.ref(database, `rooms/${roomId}`), updates);
+    },
     async saveTitle(title) {
       await databaseModule.update(roomRef, { title, updatedAt: databaseModule.serverTimestamp() });
     },
@@ -586,6 +659,11 @@ async function connectFirebase() {
 function saveNode(node) {
   setConnection(remote ? "syncing" : "local", remote ? "저장 중" : "이 브라우저에 저장 중");
   remote?.saveNode(node).then(() => setConnection("online", "모든 변경사항 저장됨")).catch(handleRemoteError);
+}
+
+function saveNodes(nodes) {
+  setConnection(remote ? "syncing" : "local", remote ? "저장 중" : "이 브라우저에 저장 중");
+  remote?.saveNodes(nodes).then(() => setConnection("online", "모든 변경사항 저장됨")).catch(handleRemoteError);
 }
 
 function saveTitle() {
