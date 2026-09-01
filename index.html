@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f6f7fb" />
+    <meta name="description" content="링크 하나로 함께 만드는 실시간 마인드맵" />
+    <title>Mind Together</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app" class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="Mind Together 홈">
+          <span class="brand-mark" aria-hidden="true">
+            <i></i><i></i><i></i>
+          </span>
+          <span>Mind Together</span>
+        </a>
+
+        <input id="board-title" class="board-title" value="새 마인드맵" maxlength="60" aria-label="마인드맵 제목" />
+
+        <div class="topbar-actions">
+          <div id="presence" class="presence" aria-label="현재 접속자">
+            <span class="presence-dots"></span>
+            <span id="presence-label">나만 접속 중</span>
+          </div>
+          <button id="share-button" class="button button-primary" type="button">
+            <span aria-hidden="true">↗</span> 공유하기
+          </button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="toolbar" aria-label="마인드맵 도구">
+          <button id="add-node" class="tool-button active" type="button" data-tooltip="하위 아이디어 추가 (Tab)">
+            <span aria-hidden="true">＋</span>
+          </button>
+          <button id="edit-node" class="tool-button" type="button" data-tooltip="선택한 아이디어 수정 (Enter)">
+            <span aria-hidden="true">✎</span>
+          </button>
+          <button id="delete-node" class="tool-button danger" type="button" data-tooltip="선택한 가지 삭제 (Delete)">
+            <span aria-hidden="true">⌫</span>
+          </button>
+          <span class="toolbar-divider"></span>
+          <button id="zoom-in" class="tool-button" type="button" data-tooltip="확대">
+            <span aria-hidden="true">＋</span>
+          </button>
+          <button id="zoom-out" class="tool-button" type="button" data-tooltip="축소">
+            <span aria-hidden="true">−</span>
+          </button>
+          <button id="fit-view" class="tool-button" type="button" data-tooltip="전체 보기">
+            <span aria-hidden="true">⌗</span>
+          </button>
+        </aside>
+
+        <section id="canvas" class="canvas" aria-label="마인드맵 편집 영역" tabindex="0">
+          <div id="viewport" class="viewport">
+            <svg id="edges" class="edges" width="4000" height="3000" viewBox="0 0 4000 3000" aria-hidden="true"></svg>
+            <div id="nodes" class="nodes"></div>
+          </div>
+          <div class="canvas-hint">빈 공간을 드래그해 이동 · 휠로 확대/축소 · 노드를 두 번 클릭해 수정</div>
+          <div id="connection-status" class="connection-status local">
+            <span></span><span id="connection-label">이 브라우저에 저장 중</span>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <section id="welcome" class="modal-backdrop" aria-modal="true" role="dialog" aria-labelledby="welcome-title">
+      <div class="welcome-card">
+        <div class="welcome-visual" aria-hidden="true">
+          <span class="visual-line line-one"></span>
+          <span class="visual-line line-two"></span>
+          <span class="visual-node visual-root">함께 생각하기</span>
+          <span class="visual-node visual-a">아이디어</span>
+          <span class="visual-node visual-b">가능성</span>
+        </div>
+        <p class="eyebrow">COLLABORATIVE MIND MAP</p>
+        <h1 id="welcome-title">생각을 꺼내고,<br />함께 연결하세요.</h1>
+        <p class="welcome-copy">회원가입 없이 시작하고 링크 하나로 동료를 초대하세요. 모든 아이디어가 한 화면에서 자랍니다.</p>
+        <button id="create-board" class="button button-primary button-large" type="button">새 마인드맵 만들기 <span>→</span></button>
+        <p class="welcome-note">무료 · 로그인 없음 · 자동 저장</p>
+      </div>
+    </section>
+
+    <div id="edit-dialog" class="dialog-backdrop hidden">
+      <form id="edit-form" class="edit-dialog">
+        <label for="node-text">아이디어 수정</label>
+        <textarea id="node-text" maxlength="120" rows="3" placeholder="아이디어를 입력하세요"></textarea>
+        <div class="color-row" aria-label="노드 색상">
+          <button type="button" class="color-chip selected" data-color="violet" aria-label="보라색"></button>
+          <button type="button" class="color-chip" data-color="blue" aria-label="파란색"></button>
+          <button type="button" class="color-chip" data-color="mint" aria-label="민트색"></button>
+          <button type="button" class="color-chip" data-color="peach" aria-label="주황색"></button>
+          <button type="button" class="color-chip" data-color="slate" aria-label="회색"></button>
+        </div>
+        <div class="dialog-actions">
+          <button id="cancel-edit" class="button button-ghost" type="button">취소</button>
+          <button class="button button-primary" type="submit">저장</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script src="./firebase-config.js"></script>
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>

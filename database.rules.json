@@ -1,0 +1,26 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "rooms": {
+      "$roomId": {
+        ".read": "auth != null && $roomId.matches(/^[a-zA-Z0-9_-]{20,80}$/)",
+        ".write": "auth != null && $roomId.matches(/^[a-zA-Z0-9_-]{20,80}$/)",
+        ".validate": "newData.hasChildren(['title', 'nodes', 'updatedAt'])",
+        "title": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 60"
+        },
+        "nodes": {
+          "$nodeId": {
+            ".validate": "!newData.exists() || (newData.hasChildren(['id', 'text', 'x', 'y', 'color', 'updatedAt']) && newData.child('id').val() === $nodeId && newData.child('text').isString() && newData.child('text').val().length > 0 && newData.child('text').val().length <= 120 && newData.child('x').isNumber() && newData.child('y').isNumber() && newData.child('color').val().matches(/^(violet|blue|mint|peach|slate)$/))"
+          }
+        },
+        "presence": {
+          "$userId": {
+            ".validate": "!newData.exists() || (newData.hasChildren(['name', 'color', 'updatedAt']) && newData.child('name').isString() && newData.child('name').val().length <= 30)"
+          }
+        }
+      }
+    }
+  }
+}
