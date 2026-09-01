@@ -3,6 +3,7 @@ import {
   NODE_HEIGHT,
   NODE_MAX_WIDTH,
   NODE_MAX_HEIGHT,
+  COLORS,
   createId,
   createNode,
   createBoard,
@@ -18,16 +19,23 @@ import {
   nodeWidth,
   nodeHeight,
   clamp
-} from "./model.js?v=20260901-5";
+} from "./model.js?v=20260901-6";
 
 const FIREBASE_VERSION = "12.18.0";
 const roomMatch = location.hash.match(/^#\/room\/([a-zA-Z0-9_-]{20,80})$/);
 const roomId = roomMatch?.[1] ?? null;
 const storageKey = roomId ? `mind-together:${roomId}` : null;
+const recentRoomsKey = "mind-together:recent-rooms";
+const colorLabels = { violet: "보라", blue: "파랑", mint: "민트", peach: "주황", slate: "회색" };
 
 const elements = {
   welcome: document.querySelector("#welcome"),
   createBoard: document.querySelector("#create-board"),
+  roomsButton: document.querySelector("#rooms-button"),
+  roomsPanel: document.querySelector("#rooms-panel"),
+  roomList: document.querySelector("#room-list"),
+  welcomeRecent: document.querySelector("#welcome-recent"),
+  welcomeRoomList: document.querySelector("#welcome-room-list"),
   boardTitle: document.querySelector("#board-title"),
   canvas: document.querySelector("#canvas"),
   viewport: document.querySelector("#viewport"),
@@ -55,12 +63,15 @@ let editingOriginalText = "";
 let editingOriginalSize = null;
 let transform = { x: 0, y: 0, scale: 1 };
 let interaction = null;
+let colorPickerId = null;
 let remote = null;
 let isApplyingRemote = false;
 let toastTimer = null;
 
 if (roomId) {
   elements.welcome.classList.add("hidden");
+  persistLocal();
+  rememberCurrentRoom();
   render();
   requestAnimationFrame(() => fitView(true));
   connectFirebase().catch((error) => {
@@ -68,6 +79,8 @@ if (roomId) {
     setConnection("local", "이 브라우저에 저장 중");
   });
 }
+
+renderRoomLists();
 
 elements.createBoard.addEventListener("click", () => {
   const newRoomId = createId("room");
@@ -83,6 +96,19 @@ elements.zoomIn.addEventListener("click", () => zoomBy(1.16));
 elements.zoomOut.addEventListener("click", () => zoomBy(0.86));
 elements.fitView.addEventListener("click", () => fitView(false));
 elements.shareButton.addEventListener("click", shareBoard);
+elements.roomsButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  const willOpen = elements.roomsPanel.classList.contains("hidden");
+  closeColorPicker();
+  elements.roomsPanel.classList.toggle("hidden", !willOpen);
+  elements.roomsButton.setAttribute("aria-expanded", String(willOpen));
+  if (willOpen) renderRoomLists();
+});
+elements.roomsPanel.addEventListener("pointerdown", (event) => event.stopPropagation());
+document.addEventListener("pointerdown", (event) => {
+  if (!event.target.closest(".rooms-panel, .rooms-button")) closeRoomsPanel();
+  if (!event.target.closest(".node-dot, .node-palette")) closeColorPicker();
+});
 
 elements.boardTitle.addEventListener("change", () => {
   if (!board) return;
@@ -130,12 +156,120 @@ function loadLocalBoard() {
 
 function persistLocal() {
   if (!board || !storageKey || isApplyingRemote) return;
-  localStorage.setItem(storageKey, JSON.stringify(board));
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(board));
+  } catch (error) {
+    console.warn("브라우저 저장소에 마인드맵을 저장하지 못했습니다.", error);
+  }
 }
 
 function touchBoard() {
   board.updatedAt = Date.now();
   persistLocal();
+  rememberCurrentRoom();
+  renderRoomLists();
+}
+
+function readRecentRooms() {
+  let recent = {};
+  try {
+    const parsed = JSON.parse(localStorage.getItem(recentRoomsKey));
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) recent = parsed;
+  } catch {
+    recent = {};
+  }
+
+  // 이전 버전에서 이미 열었던 룸도 첫 사용 시 자동으로 목록에 포함한다.
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (!key?.startsWith("mind-together:room-")) continue;
+    const savedRoomId = key.slice("mind-together:".length);
+    if (recent[savedRoomId]) continue;
+    try {
+      const savedBoard = JSON.parse(localStorage.getItem(key));
+      recent[savedRoomId] = { lastOpenedAt: Number(savedBoard?.updatedAt) || Date.now() };
+    } catch {
+      recent[savedRoomId] = { lastOpenedAt: Date.now() };
+    }
+  }
+  return recent;
+}
+
+function rememberCurrentRoom() {
+  if (!roomId) return;
+  const recent = readRecentRooms();
+  recent[roomId] = { lastOpenedAt: Date.now() };
+  try {
+    localStorage.setItem(recentRoomsKey, JSON.stringify(recent));
+  } catch (error) {
+    console.warn("최근 마인드맵 목록을 저장하지 못했습니다.", error);
+  }
+}
+
+function roomSummaries() {
+  const recent = readRecentRooms();
+  return Object.entries(recent).map(([savedRoomId, metadata]) => {
+    let savedBoard = null;
+    try {
+      savedBoard = JSON.parse(localStorage.getItem(`mind-together:${savedRoomId}`));
+    } catch {
+      savedBoard = null;
+    }
+    const root = Object.values(savedBoard?.nodes ?? {}).find((node) => node?.parentId === null);
+    return {
+      roomId: savedRoomId,
+      title: cleanText(savedBoard?.title, "새 마인드맵", 60),
+      rootText: cleanText(root?.text, "중심 아이디어", 120),
+      lastOpenedAt: Number(metadata?.lastOpenedAt) || Number(savedBoard?.updatedAt) || 0
+    };
+  }).filter((summary) => /^room-[a-zA-Z0-9_-]{20,80}$/.test(summary.roomId))
+    .sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
+}
+
+function createRoomList(container, summaries) {
+  container.replaceChildren();
+  if (!summaries.length) {
+    const empty = document.createElement("div");
+    empty.className = "room-empty";
+    empty.textContent = "아직 저장된 마인드맵이 없어요.";
+    container.append(empty);
+    return;
+  }
+  const dateFormatter = new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  summaries.forEach((summary) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `room-item${summary.roomId === roomId ? " current" : ""}`;
+    item.dataset.roomId = summary.roomId;
+    const title = document.createElement("span");
+    title.className = "room-item-title";
+    title.textContent = summary.title;
+    const root = document.createElement("span");
+    root.className = "room-item-root";
+    root.textContent = summary.rootText;
+    const time = document.createElement("span");
+    time.className = "room-item-time";
+    time.textContent = summary.lastOpenedAt ? dateFormatter.format(new Date(summary.lastOpenedAt)) : "";
+    item.append(title, root, time);
+    item.addEventListener("click", () => {
+      closeRoomsPanel();
+      if (summary.roomId === roomId) return;
+      location.hash = `/room/${summary.roomId}`;
+    });
+    container.append(item);
+  });
+}
+
+function renderRoomLists() {
+  const summaries = roomSummaries();
+  createRoomList(elements.roomList, summaries);
+  createRoomList(elements.welcomeRoomList, summaries);
+  elements.welcomeRecent.classList.toggle("hidden", summaries.length === 0);
+}
+
+function closeRoomsPanel() {
+  elements.roomsPanel.classList.add("hidden");
+  elements.roomsButton.setAttribute("aria-expanded", "false");
 }
 
 function render() {
@@ -169,7 +303,39 @@ function render() {
     nodeElement.style.transform = `translate(${node.x}px, ${node.y}px)`;
     nodeElement.style.width = `${nodeWidth(node)}px`;
     nodeElement.style.height = `${nodeHeight(node)}px`;
-    nodeElement.innerHTML = `<span class="node-dot"></span><span class="node-copy"></span><span class="node-collapse" role="button"></span><span class="node-add" aria-hidden="true">＋</span>`;
+    nodeElement.innerHTML = `<span class="node-dot" role="button" tabindex="0" aria-label="${colorLabels[node.color]} 색상 변경"></span><span class="node-copy"></span><span class="node-collapse" role="button"></span><span class="node-add" aria-hidden="true">＋</span><span class="node-palette${colorPickerId === node.id ? " visible" : ""}" role="menu" aria-label="노드 색상"></span>`;
+    const dotElement = nodeElement.querySelector(".node-dot");
+    const paletteElement = nodeElement.querySelector(".node-palette");
+    dotElement.addEventListener("pointerdown", (event) => event.stopPropagation());
+    dotElement.addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectedId = node.id;
+      colorPickerId = colorPickerId === node.id ? null : node.id;
+      render();
+    });
+    dotElement.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      event.stopPropagation();
+      selectedId = node.id;
+      colorPickerId = colorPickerId === node.id ? null : node.id;
+      render();
+    });
+    paletteElement.addEventListener("pointerdown", (event) => event.stopPropagation());
+    COLORS.forEach((color) => {
+      const swatch = document.createElement("button");
+      swatch.type = "button";
+      swatch.className = `color-swatch color-${color}${node.color === color ? " selected" : ""}`;
+      swatch.setAttribute("role", "menuitem");
+      swatch.setAttribute("aria-label", `${colorLabels[color]}색으로 변경`);
+      swatch.title = colorLabels[color];
+      swatch.addEventListener("pointerdown", (event) => event.stopPropagation());
+      swatch.addEventListener("click", (event) => {
+        event.stopPropagation();
+        changeNodeColor(node.id, color);
+      });
+      paletteElement.append(swatch);
+    });
     const copyElement = nodeElement.querySelector(".node-copy");
     if (editingId === node.id) {
       const input = document.createElement("textarea");
@@ -232,6 +398,27 @@ function toggleNodeCollapse(nodeId) {
   touchBoard();
   render();
   saveNode(node);
+}
+
+function changeNodeColor(nodeId, color) {
+  const node = board?.nodes[nodeId];
+  if (!node || !COLORS.includes(color)) return;
+  colorPickerId = null;
+  if (node.color === color) {
+    render();
+    return;
+  }
+  node.color = color;
+  node.updatedAt = Date.now();
+  touchBoard();
+  render();
+  saveNode(node);
+}
+
+function closeColorPicker() {
+  if (!colorPickerId) return;
+  colorPickerId = null;
+  elements.nodes.querySelectorAll(".node-palette.visible").forEach((palette) => palette.classList.remove("visible"));
 }
 
 function applyTransform() {
@@ -421,7 +608,7 @@ function onCanvasPointerDown(event) {
 }
 
 function onCanvasDoubleClick(event) {
-  if (event.target.closest(".node-add, .node-collapse, .node-inline-editor")) return;
+  if (event.target.closest(".node-add, .node-collapse, .node-dot, .node-palette, .node-inline-editor")) return;
   const nodeElement = event.target.closest(".mind-node");
   if (!nodeElement) return;
   event.preventDefault();
@@ -598,8 +785,10 @@ async function connectFirebase() {
   } else {
     isApplyingRemote = true;
     board = normalizeBoard(roomSnapshot.val(), roomId);
-    persistLocal();
     isApplyingRemote = false;
+    persistLocal();
+    rememberCurrentRoom();
+    renderRoomLists();
     selectedId = board.nodes[selectedId] ? selectedId : "root";
     render();
     fitView(true);
@@ -620,6 +809,8 @@ async function connectFirebase() {
     board = normalizeBoard(snapshot.val(), roomId);
     localStorage.setItem(storageKey, JSON.stringify(board));
     isApplyingRemote = false;
+    rememberCurrentRoom();
+    renderRoomLists();
     selectedId = board.nodes[selectedId] ? selectedId : "root";
     render();
   });
