@@ -5,7 +5,9 @@ import {
   createNode,
   childPosition,
   cleanText,
+  canReparent,
   descendants,
+  dropTargetAt,
   edgePath,
   normalizeBoard
 } from "../src/model.js";
@@ -38,6 +40,29 @@ test("가지 삭제 범위에 모든 자손이 포함된다", () => {
     c: createNode({ id: "c", parentId: "root" })
   };
   assert.deepEqual([...descendants(nodes, "a")].sort(), ["a", "b"]);
+});
+
+test("노드는 다른 가지로 이동할 수 있지만 자신의 자손 아래로는 이동할 수 없다", () => {
+  const nodes = {
+    root: createNode({ id: "root", x: 0, y: 0 }),
+    a: createNode({ id: "a", parentId: "root", x: 300, y: 0 }),
+    b: createNode({ id: "b", parentId: "a", x: 600, y: 0 }),
+    c: createNode({ id: "c", parentId: "root", x: 300, y: 200 })
+  };
+  assert.equal(canReparent(nodes, "a", "c"), true);
+  assert.equal(canReparent(nodes, "a", "b"), false);
+  assert.equal(canReparent(nodes, "root", "a"), false);
+});
+
+test("드래그 좌표 아래의 유효한 부모 노드를 찾는다", () => {
+  const nodes = {
+    root: createNode({ id: "root", x: 0, y: 0 }),
+    a: createNode({ id: "a", parentId: "root", x: 300, y: 0 }),
+    b: createNode({ id: "b", parentId: "root", x: 600, y: 0 })
+  };
+  assert.equal(dropTargetAt(nodes, "a", 650, 30), "b");
+  assert.equal(dropTargetAt(nodes, "a", 350, 30), null);
+  assert.equal(dropTargetAt(nodes, "root", 650, 30), null);
 });
 
 test("손상된 보드 데이터는 안전한 기본값으로 정규화된다", () => {
