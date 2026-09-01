@@ -9,6 +9,7 @@ import {
   childPosition,
   cleanText,
   descendants,
+  dropTargetAt,
   edgePath,
   normalizeBoard,
   clamp
@@ -87,6 +88,7 @@ elements.canvas.addEventListener("pointerdown", onCanvasPointerDown);
 elements.canvas.addEventListener("pointermove", onPointerMove);
 elements.canvas.addEventListener("pointerup", onPointerUp);
 elements.canvas.addEventListener("pointercancel", onPointerUp);
+elements.canvas.addEventListener("dblclick", onCanvasDoubleClick);
 elements.canvas.addEventListener("wheel", onWheel, { passive: false });
 
 document.addEventListener("keydown", (event) => {
@@ -139,6 +141,7 @@ function render() {
       const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
       path.setAttribute("d", edgePath(board.nodes[node.parentId], node));
       path.setAttribute("class", `edge edge-${node.color}`);
+      path.dataset.childId = node.id;
       elements.edges.append(path);
     }
   }
@@ -149,6 +152,7 @@ function render() {
     nodeElement.setAttribute("role", "button");
     nodeElement.className = `mind-node color-${node.color}${selectedId === node.id ? " selected" : ""}${node.id === "root" ? " root-node" : ""}${editingId === node.id ? " editing" : ""}`;
     nodeElement.dataset.nodeId = node.id;
+    nodeElement.setAttribute("aria-pressed", String(selectedId === node.id));
     nodeElement.style.transform = `translate(${node.x}px, ${node.y}px)`;
     nodeElement.innerHTML = `<span class="node-dot"></span><span class="node-copy"></span><span class="node-add" aria-hidden="true">＋</span>`;
     const copyElement = nodeElement.querySelector(".node-copy");
@@ -178,11 +182,6 @@ function render() {
       copyElement.textContent = node.text;
     }
     nodeElement.setAttribute("aria-label", `${node.text} 아이디어`);
-    nodeElement.addEventListener("dblclick", (event) => {
-      event.stopPropagation();
-      selectedId = node.id;
-      startInlineEdit(true);
-    });
     nodeElement.querySelector(".node-add").addEventListener("pointerdown", (event) => event.stopPropagation());
     nodeElement.querySelector(".node-add").addEventListener("click", (event) => {
       event.stopPropagation();
@@ -203,6 +202,25 @@ function updateNodeSelection() {
     const selected = nodeElement.dataset.nodeId === selectedId;
     nodeElement.classList.toggle("selected", selected);
     nodeElement.setAttribute("aria-pressed", String(selected));
+  });
+}
+
+function updateBoardGeometry() {
+  elements.nodes.querySelectorAll(".mind-node").forEach((nodeElement) => {
+    const node = board.nodes[nodeElement.dataset.nodeId];
+    if (node) nodeElement.style.transform = `translate(${node.x}px, ${node.y}px)`;
+  });
+  elements.edges.querySelectorAll(".edge").forEach((path) => {
+    const child = board.nodes[path.dataset.childId];
+    const parent = child && board.nodes[child.parentId];
+    if (parent) path.setAttribute("d", edgePath(parent, child));
+  });
+}
+
+function updateDropTarget(targetId = null) {
+  elements.nodes.querySelectorAll(".mind-node").forEach((nodeElement) => {
+    nodeElement.classList.toggle("drop-target", nodeElement.dataset.nodeId === targetId);
+    nodeElement.classList.toggle("dragging", nodeElement.dataset.nodeId === selectedId && Boolean(interaction?.moved));
   });
 }
 
@@ -274,7 +292,6 @@ function deleteSelected() {
 function onCanvasPointerDown(event) {
   const nodeElement = event.target.closest(".mind-node");
   if (event.target.closest(".node-inline-editor")) return;
-  elements.canvas.setPointerCapture?.(event.pointerId);
   if (nodeElement) {
     const id = nodeElement.dataset.nodeId;
     const node = board.nodes[id];
@@ -286,12 +303,15 @@ function onCanvasPointerDown(event) {
       startY: event.clientY,
       nodeX: node.x,
       nodeY: node.y,
-      moved: false
+      moved: false,
+      dropTargetId: null
     };
+    nodeElement.setPointerCapture?.(event.pointerId);
     // 클릭할 때 노드 DOM을 교체하면 브라우저의 더블클릭 판정이 끊긴다.
     // 선택 스타일만 갱신해 중심 노드를 포함한 모든 노드의 dblclick을 유지한다.
     updateNodeSelection();
   } else {
+    elements.canvas.setPointerCapture?.(event.pointerId);
     interaction = {
       type: "pan",
       pointerId: event.pointerId,
@@ -302,6 +322,16 @@ function onCanvasPointerDown(event) {
     };
     elements.canvas.classList.add("panning");
   }
+}
+
+function onCanvasDoubleClick(event) {
+  if (event.target.closest(".node-add, .node-inline-editor")) return;
+  const nodeElement = event.target.closest(".mind-node");
+  if (!nodeElement) return;
+  event.preventDefault();
+  selectedId = nodeElement.dataset.nodeId;
+  updateNodeSelection();
+  startInlineEdit(true);
 }
 
 function onPointerMove(event) {
@@ -316,24 +346,50 @@ function onPointerMove(event) {
   }
   const node = board.nodes[selectedId];
   if (!node) return;
+  if (!interaction.moved) {
+    if (Math.hypot(dx, dy) <= 5) return;
+    interaction.moved = true;
+  }
   node.x = clamp(interaction.nodeX + dx / transform.scale, 0, BOARD_WIDTH - NODE_WIDTH);
   node.y = clamp(interaction.nodeY + dy / transform.scale, 0, BOARD_HEIGHT - NODE_HEIGHT);
-  interaction.moved ||= Math.abs(dx) + Math.abs(dy) > 4;
-  render();
+  const rect = elements.canvas.getBoundingClientRect();
+  const worldX = (event.clientX - rect.left - transform.x) / transform.scale;
+  const worldY = (event.clientY - rect.top - transform.y) / transform.scale;
+  interaction.dropTargetId = dropTargetAt(board.nodes, selectedId, worldX, worldY);
+  updateBoardGeometry();
+  updateDropTarget(interaction.dropTargetId);
 }
 
 function onPointerUp(event) {
   if (!interaction || interaction.pointerId !== event.pointerId) return;
   if (interaction.type === "node" && interaction.moved) {
     const node = board.nodes[selectedId];
-    node.x = Math.round(node.x);
-    node.y = Math.round(node.y);
-    node.updatedAt = Date.now();
-    touchBoard();
-    saveNode(node);
+    if (event.type === "pointercancel") {
+      node.x = interaction.nodeX;
+      node.y = interaction.nodeY;
+    } else {
+      const target = board.nodes[interaction.dropTargetId];
+      if (target) {
+        const otherNodes = { ...board.nodes };
+        delete otherNodes[node.id];
+        const position = childPosition(otherNodes, target);
+        node.parentId = target.id;
+        node.x = position.x;
+        node.y = position.y;
+        showToast(`‘${target.text}’의 하위 아이디어로 이동했어요.`);
+      } else {
+        node.x = Math.round(node.x);
+        node.y = Math.round(node.y);
+      }
+      node.updatedAt = Date.now();
+      touchBoard();
+      saveNode(node);
+    }
+    render();
   }
   interaction = null;
   elements.canvas.classList.remove("panning");
+  updateDropTarget();
 }
 
 function onWheel(event) {
