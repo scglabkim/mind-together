@@ -96,8 +96,24 @@ button { color: inherit; }
 }
 .mind-node:hover { box-shadow: 0 10px 24px rgba(40,36,65,.14); }
 .mind-node.selected { border-color: var(--violet); box-shadow: 0 0 0 3px rgba(108,92,231,.15), 0 10px 25px rgba(40,36,65,.13); }
+.mind-node.editing { cursor: text; }
 .root-node { color: white; border-color: transparent; background: linear-gradient(145deg, #7567ec, #5b4dce); box-shadow: 0 12px 28px rgba(85,70,200,.28); }
 .node-copy { overflow-wrap: anywhere; }
+.node-inline-editor {
+  min-width: 0;
+  width: 100%;
+  padding: 3px 4px;
+  border: 0;
+  border-bottom: 1.5px solid currentColor;
+  outline: 0;
+  color: inherit;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 680;
+  line-height: 1.35;
+}
+.node-inline-editor::selection { color: white; background: rgba(108,92,231,.72); }
+.root-node .node-inline-editor::selection { color: var(--violet-dark); background: #c6ffea; }
 .node-dot { flex: 0 0 10px; width: 10px; height: 10px; border-radius: 50%; background: var(--node-color); box-shadow: 0 0 0 5px var(--node-soft); }
 .root-node .node-dot { background: #c6ffea; box-shadow: 0 0 0 5px rgba(198,255,234,.16); }
 .node-add { position: absolute; right: 10px; top: 50%; translate: 0 -50%; display: grid; place-items: center; width: 25px; height: 25px; border-radius: 8px; color: var(--node-color); background: var(--node-soft); opacity: 0; transition: opacity .14s ease; }
@@ -124,7 +140,7 @@ button { color: inherit; }
 .connection-status.syncing > span:first-child { background: #e5a228; animation: pulse 1s infinite; }
 .connection-status.error > span:first-child { background: #d6455d; }
 
-.modal-backdrop, .dialog-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: rgba(25,23,38,.4); backdrop-filter: blur(10px); }
+.modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: rgba(25,23,38,.4); backdrop-filter: blur(10px); }
 .welcome-card { width: min(570px, 100%); padding: 42px; border: 1px solid rgba(255,255,255,.7); border-radius: 28px; background: rgba(255,255,255,.96); box-shadow: 0 30px 80px rgba(34,28,78,.26); text-align: center; }
 .welcome-visual { position: relative; width: 330px; height: 125px; margin: 0 auto 24px; }
 .visual-node { position: absolute; z-index: 2; display: grid; place-items: center; height: 38px; padding: 0 16px; border: 1px solid var(--line); border-radius: 11px; background: white; box-shadow: 0 7px 18px rgba(43,38,76,.1); font-size: 12px; font-weight: 720; }
@@ -137,20 +153,6 @@ button { color: inherit; }
 .welcome-card h1 { margin: 0; font-size: clamp(34px, 6vw, 48px); line-height: 1.16; letter-spacing: -.045em; }
 .welcome-copy { max-width: 430px; margin: 19px auto 25px; color: var(--muted); font-size: 15px; line-height: 1.65; }
 .welcome-note { margin: 15px 0 0; color: #9996a4; font-size: 12px; }
-
-.edit-dialog { width: min(420px, 100%); padding: 22px; border-radius: 18px; background: white; box-shadow: 0 24px 70px rgba(29,25,58,.28); }
-.edit-dialog label { display: block; margin-bottom: 11px; font-weight: 760; }
-.edit-dialog textarea { width: 100%; resize: none; padding: 13px; border: 1px solid #dedce7; border-radius: 11px; outline: none; line-height: 1.5; }
-.edit-dialog textarea:focus { border-color: var(--violet); box-shadow: 0 0 0 3px rgba(108,92,231,.12); }
-.color-row { display: flex; gap: 9px; margin: 15px 0 22px; }
-.color-chip { width: 25px; height: 25px; border: 3px solid white; border-radius: 50%; box-shadow: 0 0 0 1px #d7d4e2; cursor: pointer; }
-.color-chip.selected { box-shadow: 0 0 0 2px var(--ink); }
-.color-chip[data-color="violet"] { background: var(--violet); }
-.color-chip[data-color="blue"] { background: var(--blue); }
-.color-chip[data-color="mint"] { background: var(--mint); }
-.color-chip[data-color="peach"] { background: var(--peach); }
-.color-chip[data-color="slate"] { background: var(--slate); }
-.dialog-actions { display: flex; justify-content: flex-end; gap: 9px; }
 
 .toast { position: fixed; z-index: 100; left: 50%; bottom: 35px; translate: -50% 18px; padding: 11px 16px; border-radius: 10px; color: white; background: #292733; box-shadow: 0 12px 28px rgba(20,18,30,.2); font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .2s ease, translate .2s ease; }
 .toast.visible { opacity: 1; translate: -50% 0; }

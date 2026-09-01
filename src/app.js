@@ -34,10 +34,6 @@ const elements = {
   zoomOut: document.querySelector("#zoom-out"),
   fitView: document.querySelector("#fit-view"),
   shareButton: document.querySelector("#share-button"),
-  editDialog: document.querySelector("#edit-dialog"),
-  editForm: document.querySelector("#edit-form"),
-  nodeText: document.querySelector("#node-text"),
-  cancelEdit: document.querySelector("#cancel-edit"),
   toast: document.querySelector("#toast"),
   connectionStatus: document.querySelector("#connection-status"),
   connectionLabel: document.querySelector("#connection-label"),
@@ -47,7 +43,8 @@ const elements = {
 
 let board = roomId ? loadLocalBoard() : null;
 let selectedId = "root";
-let editingColor = "violet";
+let editingId = null;
+let editingOriginalText = "";
 let transform = { x: 0, y: 0, scale: 1 };
 let interaction = null;
 let remote = null;
@@ -71,16 +68,12 @@ elements.createBoard.addEventListener("click", () => {
 });
 
 elements.addNode.addEventListener("click", addChildNode);
-elements.editNode.addEventListener("click", openEditor);
+elements.editNode.addEventListener("click", () => startInlineEdit());
 elements.deleteNode.addEventListener("click", deleteSelected);
 elements.zoomIn.addEventListener("click", () => zoomBy(1.16));
 elements.zoomOut.addEventListener("click", () => zoomBy(0.86));
 elements.fitView.addEventListener("click", () => fitView(false));
 elements.shareButton.addEventListener("click", shareBoard);
-elements.cancelEdit.addEventListener("click", closeEditor);
-elements.editDialog.addEventListener("pointerdown", (event) => {
-  if (event.target === elements.editDialog) closeEditor();
-});
 
 elements.boardTitle.addEventListener("change", () => {
   if (!board) return;
@@ -90,26 +83,6 @@ elements.boardTitle.addEventListener("change", () => {
   saveTitle();
 });
 
-elements.editForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  if (!board?.nodes[selectedId]) return;
-  const node = board.nodes[selectedId];
-  node.text = cleanText(elements.nodeText.value);
-  node.color = editingColor;
-  node.updatedAt = Date.now();
-  touchBoard();
-  closeEditor();
-  render();
-  saveNode(node);
-});
-
-document.querySelectorAll(".color-chip").forEach((chip) => {
-  chip.addEventListener("click", () => {
-    editingColor = chip.dataset.color;
-    document.querySelectorAll(".color-chip").forEach((item) => item.classList.toggle("selected", item === chip));
-  });
-});
-
 elements.canvas.addEventListener("pointerdown", onCanvasPointerDown);
 elements.canvas.addEventListener("pointermove", onPointerMove);
 elements.canvas.addEventListener("pointerup", onPointerUp);
@@ -117,17 +90,14 @@ elements.canvas.addEventListener("pointercancel", onPointerUp);
 elements.canvas.addEventListener("wheel", onWheel, { passive: false });
 
 document.addEventListener("keydown", (event) => {
-  if (!roomId || !elements.editDialog.classList.contains("hidden")) {
-    if (event.key === "Escape") closeEditor();
-    return;
-  }
+  if (!roomId || editingId) return;
   if (["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
   if (event.key === "Tab") {
     event.preventDefault();
     addChildNode();
   } else if (event.key === "Enter") {
     event.preventDefault();
-    openEditor();
+    startInlineEdit();
   } else if (event.key === "Delete" || event.key === "Backspace") {
     event.preventDefault();
     deleteSelected();
@@ -174,18 +144,44 @@ function render() {
   }
 
   for (const node of Object.values(board.nodes)) {
-    const nodeElement = document.createElement("button");
-    nodeElement.type = "button";
-    nodeElement.className = `mind-node color-${node.color}${selectedId === node.id ? " selected" : ""}${node.id === "root" ? " root-node" : ""}`;
+    const nodeElement = document.createElement("div");
+    nodeElement.tabIndex = 0;
+    nodeElement.setAttribute("role", "button");
+    nodeElement.className = `mind-node color-${node.color}${selectedId === node.id ? " selected" : ""}${node.id === "root" ? " root-node" : ""}${editingId === node.id ? " editing" : ""}`;
     nodeElement.dataset.nodeId = node.id;
     nodeElement.style.transform = `translate(${node.x}px, ${node.y}px)`;
     nodeElement.innerHTML = `<span class="node-dot"></span><span class="node-copy"></span><span class="node-add" aria-hidden="true">＋</span>`;
-    nodeElement.querySelector(".node-copy").textContent = node.text;
+    const copyElement = nodeElement.querySelector(".node-copy");
+    if (editingId === node.id) {
+      const input = document.createElement("input");
+      input.className = "node-inline-editor";
+      input.type = "text";
+      input.maxLength = 120;
+      input.value = node.text;
+      input.setAttribute("aria-label", `${node.text} 수정`);
+      input.addEventListener("pointerdown", (event) => event.stopPropagation());
+      input.addEventListener("click", (event) => event.stopPropagation());
+      input.addEventListener("dblclick", (event) => event.stopPropagation());
+      input.addEventListener("keydown", (event) => {
+        event.stopPropagation();
+        if (event.key === "Enter") {
+          event.preventDefault();
+          finishInlineEdit(input.value);
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          finishInlineEdit(editingOriginalText, true);
+        }
+      });
+      input.addEventListener("blur", () => finishInlineEdit(input.value));
+      copyElement.replaceWith(input);
+    } else {
+      copyElement.textContent = node.text;
+    }
     nodeElement.setAttribute("aria-label", `${node.text} 아이디어`);
     nodeElement.addEventListener("dblclick", (event) => {
       event.stopPropagation();
       selectedId = node.id;
-      openEditor();
+      startInlineEdit(true);
     });
     nodeElement.querySelector(".node-add").addEventListener("pointerdown", (event) => event.stopPropagation());
     nodeElement.querySelector(".node-add").addEventListener("click", (event) => {
@@ -220,24 +216,36 @@ function addChildNode() {
   touchBoard();
   render();
   saveNode(node);
-  openEditor(true);
+  startInlineEdit(true);
 }
 
-function openEditor(selectAll = false) {
+function startInlineEdit(selectAll = false) {
   const node = board?.nodes[selectedId];
-  if (!node) return;
-  elements.nodeText.value = node.text;
-  editingColor = node.color;
-  document.querySelectorAll(".color-chip").forEach((chip) => chip.classList.toggle("selected", chip.dataset.color === editingColor));
-  elements.editDialog.classList.remove("hidden");
+  if (!node || editingId) return;
+  editingId = node.id;
+  editingOriginalText = node.text;
+  render();
   requestAnimationFrame(() => {
-    elements.nodeText.focus();
-    if (selectAll) elements.nodeText.select();
+    const input = elements.nodes.querySelector(`[data-node-id="${CSS.escape(node.id)}"] .node-inline-editor`);
+    input?.focus();
+    if (selectAll) input?.select();
   });
 }
 
-function closeEditor() {
-  elements.editDialog.classList.add("hidden");
+function finishInlineEdit(value, cancelled = false) {
+  const id = editingId;
+  if (!id || !board?.nodes[id]) return;
+  const node = board.nodes[id];
+  const nextText = cancelled ? editingOriginalText : cleanText(value, editingOriginalText);
+  editingId = null;
+  editingOriginalText = "";
+  if (node.text !== nextText) {
+    node.text = nextText;
+    node.updatedAt = Date.now();
+    touchBoard();
+    saveNode(node);
+  }
+  render();
   elements.canvas.focus();
 }
 
@@ -257,6 +265,7 @@ function deleteSelected() {
 
 function onCanvasPointerDown(event) {
   const nodeElement = event.target.closest(".mind-node");
+  if (event.target.closest(".node-inline-editor")) return;
   elements.canvas.setPointerCapture?.(event.pointerId);
   if (nodeElement) {
     const id = nodeElement.dataset.nodeId;
@@ -435,7 +444,7 @@ async function connectFirebase() {
   await databaseModule.onDisconnect(presenceRef).remove();
 
   const unsubscribeRoom = databaseModule.onValue(roomRef, (snapshot) => {
-    if (!snapshot.exists() || interaction?.type === "node") return;
+    if (!snapshot.exists() || interaction?.type === "node" || editingId) return;
     isApplyingRemote = true;
     board = normalizeBoard(snapshot.val(), roomId);
     localStorage.setItem(storageKey, JSON.stringify(board));

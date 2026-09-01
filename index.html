@@ -85,24 +85,6 @@
       </div>
     </section>
 
-    <div id="edit-dialog" class="dialog-backdrop hidden">
-      <form id="edit-form" class="edit-dialog">
-        <label for="node-text">아이디어 수정</label>
-        <textarea id="node-text" maxlength="120" rows="3" placeholder="아이디어를 입력하세요"></textarea>
-        <div class="color-row" aria-label="노드 색상">
-          <button type="button" class="color-chip selected" data-color="violet" aria-label="보라색"></button>
-          <button type="button" class="color-chip" data-color="blue" aria-label="파란색"></button>
-          <button type="button" class="color-chip" data-color="mint" aria-label="민트색"></button>
-          <button type="button" class="color-chip" data-color="peach" aria-label="주황색"></button>
-          <button type="button" class="color-chip" data-color="slate" aria-label="회색"></button>
-        </div>
-        <div class="dialog-actions">
-          <button id="cancel-edit" class="button button-ghost" type="button">취소</button>
-          <button class="button button-primary" type="submit">저장</button>
-        </div>
-      </form>
-    </div>
-
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script src="./firebase-config.js"></script>
