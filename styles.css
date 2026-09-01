@@ -76,7 +76,6 @@ button { color: inherit; }
 
 .mind-node {
   position: absolute;
-  width: 190px;
   min-height: 66px;
   display: flex;
   align-items: center;
@@ -101,10 +100,12 @@ button { color: inherit; }
 .root-node.drop-target { box-shadow: 0 0 0 5px rgba(24,167,124,.24), 0 14px 32px rgba(85,70,200,.3); }
 .mind-node.editing { cursor: text; }
 .root-node { color: white; border-color: transparent; background: linear-gradient(145deg, #7567ec, #5b4dce); box-shadow: 0 12px 28px rgba(85,70,200,.28); }
-.node-copy { overflow-wrap: anywhere; }
+.node-copy { min-width: 0; width: 100%; overflow-wrap: anywhere; white-space: pre-wrap; }
 .node-inline-editor {
+  flex: 1;
   min-width: 0;
   width: 100%;
+  min-height: 24px;
   padding: 3px 4px;
   border: 0;
   border-bottom: 1.5px solid currentColor;
@@ -114,6 +115,9 @@ button { color: inherit; }
   font-size: 14px;
   font-weight: 680;
   line-height: 1.35;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
 }
 .node-inline-editor::selection { color: white; background: rgba(108,92,231,.72); }
 .root-node .node-inline-editor::selection { color: var(--violet-dark); background: #c6ffea; }
