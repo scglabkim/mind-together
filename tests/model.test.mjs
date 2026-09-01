@@ -8,7 +8,9 @@ import {
   canReparent,
   descendants,
   dropTargetAt,
+  edgeAnchors,
   edgePath,
+  estimatedNodeSize,
   normalizeBoard
 } from "../src/model.js";
 
@@ -77,4 +79,22 @@ test("연결선은 SVG cubic path로 생성된다", () => {
   const parent = createNode({ x: 100, y: 100 });
   const child = createNode({ x: 500, y: 200 });
   assert.match(edgePath(parent, child), /^M .+ C .+$/);
+});
+
+test("연결선은 상대 위치에 따라 노드의 좌우 또는 상하 면에 붙는다", () => {
+  const center = createNode({ id: "center", x: 500, y: 500 });
+  const right = createNode({ id: "right", x: 900, y: 500 });
+  const above = createNode({ id: "above", x: 500, y: 100 });
+  const rightAnchors = edgeAnchors(center, right);
+  const aboveAnchors = edgeAnchors(center, above);
+  assert.equal(rightAnchors.start.x, center.x + center.width);
+  assert.equal(rightAnchors.start.nx, 1);
+  assert.equal(aboveAnchors.start.y, center.y);
+  assert.equal(aboveAnchors.start.ny, -1);
+});
+
+test("긴 텍스트는 노드의 너비 또는 높이를 확장한다", () => {
+  const short = estimatedNodeSize("짧은 생각");
+  const long = estimatedNodeSize("매우 긴 아이디어를 입력할 때에도 텍스트 전체를 편안하게 확인할 수 있어야 합니다".repeat(2));
+  assert.ok(long.width > short.width || long.height > short.height);
 });
