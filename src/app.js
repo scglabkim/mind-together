@@ -3,6 +3,8 @@ import {
   BOARD_HEIGHT,
   NODE_WIDTH,
   NODE_HEIGHT,
+  NODE_MAX_WIDTH,
+  NODE_MAX_HEIGHT,
   createId,
   createNode,
   createBoard,
@@ -12,6 +14,8 @@ import {
   dropTargetAt,
   edgePath,
   normalizeBoard,
+  nodeWidth,
+  nodeHeight,
   clamp
 } from "./model.js";
 
@@ -46,6 +50,7 @@ let board = roomId ? loadLocalBoard() : null;
 let selectedId = "root";
 let editingId = null;
 let editingOriginalText = "";
+let editingOriginalSize = null;
 let transform = { x: 0, y: 0, scale: 1 };
 let interaction = null;
 let remote = null;
@@ -154,18 +159,21 @@ function render() {
     nodeElement.dataset.nodeId = node.id;
     nodeElement.setAttribute("aria-pressed", String(selectedId === node.id));
     nodeElement.style.transform = `translate(${node.x}px, ${node.y}px)`;
+    nodeElement.style.width = `${nodeWidth(node)}px`;
+    nodeElement.style.height = `${nodeHeight(node)}px`;
     nodeElement.innerHTML = `<span class="node-dot"></span><span class="node-copy"></span><span class="node-add" aria-hidden="true">＋</span>`;
     const copyElement = nodeElement.querySelector(".node-copy");
     if (editingId === node.id) {
-      const input = document.createElement("input");
+      const input = document.createElement("textarea");
       input.className = "node-inline-editor";
-      input.type = "text";
+      input.rows = 1;
       input.maxLength = 120;
       input.value = node.text;
       input.setAttribute("aria-label", `${node.text} 수정`);
       input.addEventListener("pointerdown", (event) => event.stopPropagation());
       input.addEventListener("click", (event) => event.stopPropagation());
       input.addEventListener("dblclick", (event) => event.stopPropagation());
+      input.addEventListener("input", () => resizeInlineEditor(input, node, nodeElement));
       input.addEventListener("keydown", (event) => {
         event.stopPropagation();
         if (event.key === "Enter") {
@@ -178,6 +186,7 @@ function render() {
       });
       input.addEventListener("blur", () => finishInlineEdit(input.value));
       copyElement.replaceWith(input);
+      requestAnimationFrame(() => resizeInlineEditor(input, node, nodeElement));
     } else {
       copyElement.textContent = node.text;
     }
@@ -208,13 +217,34 @@ function updateNodeSelection() {
 function updateBoardGeometry() {
   elements.nodes.querySelectorAll(".mind-node").forEach((nodeElement) => {
     const node = board.nodes[nodeElement.dataset.nodeId];
-    if (node) nodeElement.style.transform = `translate(${node.x}px, ${node.y}px)`;
+    if (node) {
+      nodeElement.style.transform = `translate(${node.x}px, ${node.y}px)`;
+      nodeElement.style.width = `${nodeWidth(node)}px`;
+      nodeElement.style.height = `${nodeHeight(node)}px`;
+    }
   });
   elements.edges.querySelectorAll(".edge").forEach((path) => {
     const child = board.nodes[path.dataset.childId];
     const parent = child && board.nodes[child.parentId];
     if (parent) path.setAttribute("d", edgePath(parent, child));
   });
+}
+
+function preferredEditorWidth(input) {
+  const context = preferredEditorWidth.context ??= document.createElement("canvas").getContext("2d");
+  context.font = getComputedStyle(input).font;
+  const textWidth = context.measureText(input.value || "새 아이디어").width;
+  return clamp(Math.ceil(textWidth + 78), NODE_WIDTH, NODE_MAX_WIDTH);
+}
+
+function resizeInlineEditor(input, node, nodeElement) {
+  node.width = preferredEditorWidth(input);
+  nodeElement.style.width = `${node.width}px`;
+  input.style.height = "1px";
+  node.height = clamp(input.scrollHeight + 34, NODE_HEIGHT, NODE_MAX_HEIGHT);
+  input.style.height = `${Math.max(24, node.height - 34)}px`;
+  nodeElement.style.height = `${node.height}px`;
+  updateBoardGeometry();
 }
 
 function updateDropTarget(targetId = null) {
@@ -250,6 +280,7 @@ function startInlineEdit(selectAll = false) {
   if (!node || editingId) return;
   editingId = node.id;
   editingOriginalText = node.text;
+  editingOriginalSize = { width: nodeWidth(node), height: nodeHeight(node) };
   render();
   requestAnimationFrame(() => {
     const input = elements.nodes.querySelector(`[data-node-id="${CSS.escape(node.id)}"] .node-inline-editor`);
@@ -263,9 +294,15 @@ function finishInlineEdit(value, cancelled = false) {
   if (!id || !board?.nodes[id]) return;
   const node = board.nodes[id];
   const nextText = cancelled ? editingOriginalText : cleanText(value, editingOriginalText);
+  if (cancelled && editingOriginalSize) {
+    node.width = editingOriginalSize.width;
+    node.height = editingOriginalSize.height;
+  }
   editingId = null;
   editingOriginalText = "";
-  if (node.text !== nextText) {
+  const sizeChanged = editingOriginalSize && (node.width !== editingOriginalSize.width || node.height !== editingOriginalSize.height);
+  editingOriginalSize = null;
+  if (node.text !== nextText || sizeChanged) {
     node.text = nextText;
     node.updatedAt = Date.now();
     touchBoard();
@@ -350,8 +387,8 @@ function onPointerMove(event) {
     if (Math.hypot(dx, dy) <= 5) return;
     interaction.moved = true;
   }
-  node.x = clamp(interaction.nodeX + dx / transform.scale, 0, BOARD_WIDTH - NODE_WIDTH);
-  node.y = clamp(interaction.nodeY + dy / transform.scale, 0, BOARD_HEIGHT - NODE_HEIGHT);
+  node.x = clamp(interaction.nodeX + dx / transform.scale, 0, BOARD_WIDTH - nodeWidth(node));
+  node.y = clamp(interaction.nodeY + dy / transform.scale, 0, BOARD_HEIGHT - nodeHeight(node));
   const rect = elements.canvas.getBoundingClientRect();
   const worldX = (event.clientX - rect.left - transform.x) / transform.scale;
   const worldY = (event.clientY - rect.top - transform.y) / transform.scale;
@@ -423,8 +460,8 @@ function fitView(initial) {
   const values = Object.values(board.nodes);
   const minX = Math.min(...values.map((node) => node.x));
   const minY = Math.min(...values.map((node) => node.y));
-  const maxX = Math.max(...values.map((node) => node.x + NODE_WIDTH));
-  const maxY = Math.max(...values.map((node) => node.y + NODE_HEIGHT));
+  const maxX = Math.max(...values.map((node) => node.x + nodeWidth(node)));
+  const maxY = Math.max(...values.map((node) => node.y + nodeHeight(node)));
   const rect = elements.canvas.getBoundingClientRect();
   const padding = initial ? 220 : 140;
   const width = Math.max(maxX - minX, 460);
