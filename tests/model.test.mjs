@@ -4,9 +4,12 @@ import {
   createBoard,
   createNode,
   childPosition,
+  rootPosition,
   cleanText,
   canReparent,
   descendants,
+  visibleNodeIds,
+  translateBranch,
   dropTargetAt,
   edgeAnchors,
   edgePath,
@@ -42,6 +45,41 @@ test("가지 삭제 범위에 모든 자손이 포함된다", () => {
     c: createNode({ id: "c", parentId: "root" })
   };
   assert.deepEqual([...descendants(nodes, "a")].sort(), ["a", "b"]);
+});
+
+test("접힌 노드의 자손만 숨기고 다른 중심 아이디어는 계속 표시한다", () => {
+  const nodes = {
+    root: createNode({ id: "root", collapsed: true }),
+    a: createNode({ id: "a", parentId: "root" }),
+    b: createNode({ id: "b", parentId: "a" }),
+    secondRoot: createNode({ id: "secondRoot", x: 2500 }),
+    c: createNode({ id: "c", parentId: "secondRoot" })
+  };
+  assert.deepEqual([...visibleNodeIds(nodes)].sort(), ["c", "root", "secondRoot"]);
+});
+
+test("부모 가지를 이동하면 모든 자손이 같은 거리만큼 이동한다", () => {
+  const nodes = {
+    root: createNode({ id: "root", x: 1000, y: 1000 }),
+    a: createNode({ id: "a", parentId: "root", x: 1300, y: 900 }),
+    b: createNode({ id: "b", parentId: "a", x: 1550, y: 850 }),
+    other: createNode({ id: "other", x: 200, y: 200 })
+  };
+  const moved = translateBranch(nodes, "a", 120, 80);
+  assert.deepEqual(moved.ids.sort(), ["a", "b"]);
+  assert.deepEqual([nodes.a.x, nodes.a.y], [1420, 980]);
+  assert.deepEqual([nodes.b.x, nodes.b.y], [1670, 930]);
+  assert.deepEqual([nodes.other.x, nodes.other.y], [200, 200]);
+});
+
+test("추가 중심 아이디어는 별도 루트 위치에 생성되고 다른 노드 아래로 붙지 않는다", () => {
+  const root = createNode({ id: "root", x: 1905, y: 1467 });
+  const nodes = { root };
+  const position = rootPosition(nodes);
+  const secondRoot = createNode({ id: "secondRoot", ...position });
+  nodes.secondRoot = secondRoot;
+  assert.notDeepEqual(position, { x: root.x, y: root.y });
+  assert.equal(canReparent(nodes, "secondRoot", "root"), false);
 });
 
 test("노드는 다른 가지로 이동할 수 있지만 자신의 자손 아래로는 이동할 수 없다", () => {
