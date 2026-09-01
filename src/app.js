@@ -241,7 +241,7 @@ function resizeInlineEditor(input, node, nodeElement) {
   node.width = preferredEditorWidth(input);
   nodeElement.style.width = `${node.width}px`;
   input.style.height = "1px";
-  node.height = clamp(input.scrollHeight + 34, NODE_HEIGHT, NODE_MAX_HEIGHT);
+  node.height = clamp(input.scrollHeight + 36, NODE_HEIGHT, NODE_MAX_HEIGHT);
   input.style.height = `${Math.max(24, node.height - 34)}px`;
   nodeElement.style.height = `${node.height}px`;
   updateBoardGeometry();
