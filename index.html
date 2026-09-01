@@ -7,17 +7,24 @@
     <meta name="description" content="링크 하나로 함께 만드는 실시간 마인드맵" />
     <title>Mind Together</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css?v=20260901-5" />
+    <link rel="stylesheet" href="./styles.css?v=20260901-6" />
   </head>
   <body>
     <div id="app" class="app-shell">
       <header class="topbar">
-        <a class="brand" href="./" aria-label="Mind Together 홈">
-          <span class="brand-mark" aria-hidden="true">
-            <i></i><i></i><i></i>
-          </span>
-          <span>Mind Together</span>
-        </a>
+        <div class="brand-area">
+          <a class="brand" href="./" aria-label="Mind Together 홈">
+            <span class="brand-mark" aria-hidden="true">
+              <i></i><i></i><i></i>
+            </span>
+            <span>Mind Together</span>
+          </a>
+          <button id="rooms-button" class="rooms-button" type="button" aria-expanded="false" aria-controls="rooms-panel">▦ <span>내 마인드맵</span></button>
+          <section id="rooms-panel" class="rooms-panel hidden" aria-label="최근 마인드맵">
+            <div class="rooms-panel-title">최근 마인드맵</div>
+            <div id="room-list" class="room-list"></div>
+          </section>
+        </div>
 
         <input id="board-title" class="board-title" value="새 마인드맵" maxlength="60" aria-label="마인드맵 제목" />
 
@@ -85,12 +92,16 @@
         <p class="welcome-copy">회원가입 없이 시작하고 링크 하나로 동료를 초대하세요. 모든 아이디어가 한 화면에서 자랍니다.</p>
         <button id="create-board" class="button button-primary button-large" type="button">새 마인드맵 만들기 <span>→</span></button>
         <p class="welcome-note">무료 · 로그인 없음 · 자동 저장</p>
+        <section id="welcome-recent" class="welcome-recent hidden" aria-label="최근 마인드맵">
+          <div class="welcome-recent-title">최근 작업</div>
+          <div id="welcome-room-list" class="room-list welcome-room-list"></div>
+        </section>
       </div>
     </section>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script src="./firebase-config.js"></script>
-    <script type="module" src="./src/app.js?v=20260901-5"></script>
+    <script type="module" src="./src/app.js?v=20260901-6"></script>
   </body>
 </html>
