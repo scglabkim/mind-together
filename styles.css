@@ -96,6 +96,9 @@ button { color: inherit; }
 }
 .mind-node:hover { box-shadow: 0 10px 24px rgba(40,36,65,.14); }
 .mind-node.selected { border-color: var(--violet); box-shadow: 0 0 0 3px rgba(108,92,231,.15), 0 10px 25px rgba(40,36,65,.13); }
+.mind-node.dragging { z-index: 3; cursor: grabbing; opacity: .9; }
+.mind-node.drop-target { border-color: #18a77c; box-shadow: 0 0 0 5px rgba(24,167,124,.2), 0 12px 28px rgba(40,36,65,.16); }
+.root-node.drop-target { box-shadow: 0 0 0 5px rgba(24,167,124,.24), 0 14px 32px rgba(85,70,200,.3); }
 .mind-node.editing { cursor: text; }
 .root-node { color: white; border-color: transparent; background: linear-gradient(145deg, #7567ec, #5b4dce); box-shadow: 0 12px 28px rgba(85,70,200,.28); }
 .node-copy { overflow-wrap: anywhere; }
